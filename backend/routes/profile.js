@@ -4,7 +4,8 @@ const { protect } = require("../middleware/authMiddleware");
 const {
   getCurrentUserProfile,
   createOrUpdateProfile,
-  getProfileByUsername
+  getProfileByUsername,
+  fetchPlatformsForProfile
 } = require("../controllers/profileController");
 
 // @route   GET /api/profile/me
@@ -17,9 +18,19 @@ router.get("/me", protect, getCurrentUserProfile);
 // @access  Private
 router.put("/", protect, createOrUpdateProfile);
 
+// @route   POST /api/profile/create
+// @desc    Manually create profile (if auto-creation failed)
+// @access  Private
+router.post("/create", protect, createOrUpdateProfile);
+
 // @route   GET /api/profile/:username
-// @desc    Get public profile by GitHub username
+// @desc    Get public profile by username
 // @access  Public
 router.get("/:username", getProfileByUsername);
+
+// @route   POST /api/profile/:username/fetchPlatforms
+// @desc    Fetch and sync platform statistics for profile
+// @access  Private
+router.post("/:username/fetchPlatforms", protect, fetchPlatformsForProfile);
 
 module.exports = router;

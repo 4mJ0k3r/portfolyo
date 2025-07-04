@@ -50,6 +50,7 @@ router.get("/verify-token", protect, (req, res) => {
 });
 
 // @route   POST /api/auth/get-token
+
 // @desc    Debug endpoint to see complete token clearly
 // @access  Public
 router.post("/get-token", async (req, res) => {

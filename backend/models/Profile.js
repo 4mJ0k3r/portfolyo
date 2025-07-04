@@ -352,6 +352,28 @@ const profileSchema = new mongoose.Schema(
       default: 0
     },
     
+    // Platform Statistics (Phase 3)
+    platformStats: {
+      github: {
+        totalRepos: { type: Number, default: 0 },
+        totalStars: { type: Number, default: 0 },
+        languages: { type: Map, of: Number, default: {} },
+        lastFetched: { type: Date, default: null }
+      },
+      codeforces: {
+        rating: { type: Number, default: 0 },
+        maxRating: { type: Number, default: 0 },
+        lastFetched: { type: Date, default: null }
+      },
+      leetcode: {
+        easySolved: { type: Number, default: 0 },
+        mediumSolved: { type: Number, default: 0 },
+        hardSolved: { type: Number, default: 0 },
+        totalSolved: { type: Number, default: 0 },
+        lastFetched: { type: Date, default: null }
+      }
+    },
+    
     lastUpdated: {
       type: Date,
       default: Date.now

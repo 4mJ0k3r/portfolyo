@@ -28,13 +28,13 @@ const isValidPassword = (password) => {
 // @access  Public
 exports.registerUser = async (req, res) => {
   try {
-    const { name, email, password, accountType } = req.body;
+    const { name, username, email, password, accountType } = req.body;
 
     // 1. Validate input fields
-    if (!name || !email || !password) {
+    if (!name || !username || !email || !password) {
       return res.status(400).json({
         success: false,
-        message: "Please provide name, email, and password"
+        message: "Please provide name, username, email, and password"
       });
     }
 
@@ -43,6 +43,21 @@ exports.registerUser = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Name must be at least 2 characters long"
+      });
+    }
+
+    // Validate username
+    if (username.trim().length < 3) {
+      return res.status(400).json({
+        success: false,
+        message: "Username must be at least 3 characters long"
+      });
+    }
+
+    if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
+      return res.status(400).json({
+        success: false,
+        message: "Username can only contain letters, numbers, underscores, and hyphens"
       });
     }
 
@@ -74,26 +89,36 @@ exports.registerUser = async (req, res) => {
     }
 
     // 2. Check if user with email already exists
-    const existingUser = await User.findByEmail(email);
-    if (existingUser) {
+    const existingUserByEmail = await User.findByEmail(email);
+    if (existingUserByEmail) {
       return res.status(400).json({
         success: false,
         message: "User with this email already exists"
       });
     }
 
-    // 3. Create new user (pre-save hook will hash password)
+    // 3. Check if user with username already exists
+    const existingUserByUsername = await User.findByUsername(username);
+    if (existingUserByUsername) {
+      return res.status(400).json({
+        success: false,
+        message: "Username is already taken"
+      });
+    }
+
+    // 4. Create new user (pre-save hook will hash password)
     const newUser = await User.create({
       name: name.trim(),
+      username: username.toLowerCase().trim(),
       email: email.toLowerCase().trim(),
       password,
       accountType: userAccountType
     });
 
-    // 4. Generate JWT token
+    // 5. Generate JWT token
     const token = generateToken(newUser._id);
 
-    // 5. Return success response (password excluded via toJSON method)
+    // 6. Return success response (password excluded via toJSON method)
     res.status(201).json({
       success: true,
       message: "User registered successfully",
@@ -101,6 +126,7 @@ exports.registerUser = async (req, res) => {
       user: {
         id: newUser._id,
         name: newUser.name,
+        username: newUser.username,
         email: newUser.email,
         accountType: newUser.accountType,
         role: newUser.role,
@@ -122,11 +148,15 @@ exports.registerUser = async (req, res) => {
       });
     }
 
-    // Handle duplicate key error (email)
+    // Handle duplicate key error (email or username)
     if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      const message = field === 'email' ? 
+        "User with this email already exists" : 
+        "Username is already taken";
       return res.status(400).json({
         success: false,
-        message: "User with this email already exists"
+        message
       });
     }
 
@@ -204,6 +234,7 @@ exports.loginUser = async (req, res) => {
       user: {
         id: user._id,
         name: user.name,
+        username: user.username,
         email: user.email,
         accountType: user.accountType,
         role: user.role,
@@ -244,6 +275,7 @@ exports.getCurrentUser = async (req, res) => {
       user: {
         id: user._id,
         name: user.name,
+        username: user.username,
         email: user.email,
         accountType: user.accountType,
         role: user.role,

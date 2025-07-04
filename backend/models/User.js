@@ -9,6 +9,19 @@ const userSchema = new mongoose.Schema(
       trim: true,
       maxlength: [50, 'Name cannot exceed 50 characters']
     },
+    username: {
+      type: String,
+      required: [true, 'Username is required'],
+      unique: true,
+      trim: true,
+      lowercase: true,
+      minlength: [3, 'Username must be at least 3 characters'],
+      maxlength: [30, 'Username cannot exceed 30 characters'],
+      match: [
+        /^[a-zA-Z0-9_-]+$/,
+        'Username can only contain letters, numbers, underscores, and hyphens'
+      ]
+    },
     email: {
       type: String,
       required: [true, 'Email is required'],
@@ -80,21 +93,35 @@ userSchema.post('save', async function(doc, next) {
   // Only create profile for new users who are developers
   if (this.isNew && doc.isDeveloper()) {
     try {
-      const Profile = require('./Profile');
+      // Use dynamic import to avoid circular dependency issues
+      const Profile = mongoose.model('Profile');
+      
+      console.log(`🔄 Attempting to create profile for new user: ${doc.email}`);
       
       // Check if profile already exists
       const existingProfile = await Profile.findOne({ user: doc._id });
       
       if (!existingProfile) {
-        await Profile.create({
+        const newProfile = await Profile.create({
           user: doc._id,
           bio: `Welcome to PortFolyo! I'm ${doc.name}, a ${doc.accountType.replace('_', ' ')} looking for exciting opportunities.`,
-          headline: `${doc.accountType.includes('pro') ? 'Professional' : 'Aspiring'} Developer`
+          headline: `${doc.accountType.includes('pro') ? 'Professional' : 'Aspiring'} Developer`,
+          jobSeekingStatus: 'actively_looking',
+          workPreference: 'remote',
+          availability: 'Immediately',
+          yearsOfExperience: 0,
+          skills: [],
+          experience: [],
+          projects: [],
+          education: []
         });
-        console.log(`🎯 Default profile created for: ${doc.email}`);
+        console.log(`🎯 Default profile created successfully for: ${doc.email} (Profile ID: ${newProfile._id})`);
+      } else {
+        console.log(`📋 Profile already exists for: ${doc.email}`);
       }
     } catch (error) {
-      console.error(`❌ Error creating profile for ${doc.email}:`, error.message);
+      console.error(`❌ Error creating profile for ${doc.email}:`, error);
+      console.error(`Error details:`, error.stack);
     }
   }
   next();
@@ -147,7 +174,15 @@ userSchema.statics.findByEmail = function (email) {
   return this.findOne({ email: email.toLowerCase() });
 };
 
+// Static method to find user by username
+userSchema.statics.findByUsername = function (username) {
+  return this.findOne({ username: username.toLowerCase() });
+};
+
 // Index for email (for faster queries)
 userSchema.index({ email: 1 });
+
+// Index for username (for faster queries)
+userSchema.index({ username: 1 });
 
 module.exports = mongoose.model("User", userSchema);
