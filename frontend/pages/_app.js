@@ -4,6 +4,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { config as faConfig } from "@fortawesome/fontawesome-svg-core";
 import "@fortawesome/fontawesome-svg-core/styles.css"; // Manually import CSS
+import { Toaster } from 'react-hot-toast';
 faConfig.autoAddCss = false; // Tell Font Awesome not to auto-add CSS
 
 export default function App({ Component, pageProps }) {
@@ -14,6 +15,7 @@ export default function App({ Component, pageProps }) {
         <Component {...pageProps} />
       </main>
       <Footer />
+      <Toaster position="top-right" />
     </div>
   );
 }

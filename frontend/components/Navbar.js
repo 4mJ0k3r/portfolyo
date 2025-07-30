@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from 'next/router';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPixiv } from '@fortawesome/free-brands-svg-icons';
 import { config as faConfig } from "@fortawesome/fontawesome-svg-core";
@@ -8,6 +9,26 @@ faConfig.autoAddCss = false;
 
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const userData = localStorage.getItem('user');
+    if (token && userData) {
+      setIsAuthenticated(true);
+      setUser(JSON.parse(userData));
+    }
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setIsAuthenticated(false);
+    setUser(null);
+    router.push('/');
+  };
 
   return (
     <nav className="sticky top-0 z-50 bg-white border-b border-gray-200 w-full">
@@ -40,10 +61,19 @@ export default function Navbar() {
               className="pl-10 pr-4 py-2 rounded-md bg-gray-100 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:bg-white text-gray-800 placeholder-gray-400 w-36 lg:w-56"
             />
           </div>
-          {/* Create Profile Button */}
-          <Link href="/register" className="bg-blue-500 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-md transition">Create Profile</Link>
-          {/* Log In Button */}
-          <Link href="/login" className="bg-gray-100 hover:bg-gray-200 text-gray-900 font-bold px-4 py-2 rounded-md border border-gray-300 transition">Log In</Link>
+          {/* Authentication Buttons */}
+          {isAuthenticated ? (
+            <>
+              <Link href="/profile/edit" className="bg-blue-500 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-md transition">Edit Profile</Link>
+              <Link href={`/profile/${user?.username}`} className="bg-green-500 hover:bg-green-700 text-white font-semibold px-4 py-2 rounded-md transition">Dashboard</Link>
+              <button onClick={handleLogout} className="bg-gray-100 hover:bg-gray-200 text-gray-900 font-bold px-4 py-2 rounded-md border border-gray-300 transition">Log Out</button>
+            </>
+          ) : (
+            <>
+              <Link href="/register" className="bg-blue-500 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-md transition">Create Profile</Link>
+              <Link href="/login" className="bg-gray-100 hover:bg-gray-200 text-gray-900 font-bold px-4 py-2 rounded-md border border-gray-300 transition">Log In</Link>
+            </>
+          )}
         </div>
         {/* Hamburger Menu (Mobile/Tablet) */}
         <div className="md:hidden flex items-center">
@@ -73,8 +103,18 @@ export default function Navbar() {
                 className="pl-10 pr-4 py-2 rounded-md bg-gray-100 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:bg-white text-gray-800 placeholder-gray-400 w-full"
                 style={{ backgroundPosition: '10px center' }}
               />
-              <Link href="/register" className="bg-blue-500 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-md transition text-center">Create Profile</Link>
-              <Link href="/login" className="bg-gray-100 hover:bg-gray-200 text-gray-900 font-bold px-4 py-2 rounded-md border border-gray-300 transition text-center">Log In</Link>
+              {isAuthenticated ? (
+                <>
+                  <Link href="/profile/edit" className="bg-blue-500 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-md transition text-center">Edit Profile</Link>
+                  <Link href={`/profile/${user?.username}`} className="bg-green-500 hover:bg-green-700 text-white font-semibold px-4 py-2 rounded-md transition text-center">Dashboard</Link>
+                  <button onClick={handleLogout} className="bg-gray-100 hover:bg-gray-200 text-gray-900 font-bold px-4 py-2 rounded-md border border-gray-300 transition text-center w-full">Log Out</button>
+                </>
+              ) : (
+                <>
+                  <Link href="/register" className="bg-blue-500 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-md transition text-center">Create Profile</Link>
+                  <Link href="/login" className="bg-gray-100 hover:bg-gray-200 text-gray-900 font-bold px-4 py-2 rounded-md border border-gray-300 transition text-center">Log In</Link>
+                </>
+              )}
             </div>
           </div>
         </div>

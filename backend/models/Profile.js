@@ -241,6 +241,30 @@ const profileSchema = new mongoose.Schema(
       trim: true
     },
     
+    // Repository URLs for AI analysis
+    topRepoUrls: [{
+      type: String,
+      trim: true,
+      validate: {
+        validator: function(v) {
+          return !v || /^https?:\/\/(www\.)?github\.com\/.+\/.+/.test(v);
+        },
+        message: 'Invalid GitHub repository URL format'
+      }
+    }],
+    
+    // Article URLs for AI analysis
+    articleUrls: [{
+      type: String,
+      trim: true,
+      validate: {
+        validator: function(v) {
+          return !v || /^https?:\/\/.+/.test(v);
+        },
+        message: 'Invalid article URL format'
+      }
+    }],
+    
     // Job Preferences
     jobSeekingStatus: {
       type: String,
@@ -358,6 +382,8 @@ const profileSchema = new mongoose.Schema(
         totalRepos: { type: Number, default: 0 },
         totalStars: { type: Number, default: 0 },
         languages: { type: Map, of: Number, default: {} },
+        commitCount90d: { type: Number, default: 0 },
+        activeWeeks90d: { type: Number, default: 0 },
         lastFetched: { type: Date, default: null }
       },
       codeforces: {
@@ -372,6 +398,90 @@ const profileSchema = new mongoose.Schema(
         totalSolved: { type: Number, default: 0 },
         lastFetched: { type: Date, default: null }
       }
+    },
+    
+    // AI-Powered Skill Extraction & Ranking (Phase 4)
+    primaryExpertise: { 
+      type: String, 
+      default: "" 
+    },
+    
+    hireableScore: { 
+      type: Number, 
+      default: 0,
+      min: 0,
+      max: 100
+    },
+    
+    subScores: {
+      codeActivityScore: { type: Number, default: 0, min: 0, max: 5 },
+      writingScore: { type: Number, default: 0, min: 0, max: 5 },
+      socialFitScore: { type: Number, default: 0, min: 0, max: 5 }
+    },
+    
+    scoreJustifications: {
+      codeActivity: [{ type: String }],
+      writing: [{ type: String }],
+      socialFit: [{ type: String }]
+    },
+    
+    narrativeSummary: { 
+      type: String, 
+      default: "" 
+    },
+    
+    // AI Analysis metadata
+    aiAnalysis: {
+      lastAnalyzed: { type: Date, default: null },
+      dataSourcesUsed: [{
+        type: String,
+        enum: ['github', 'codeforces', 'leetcode', 'linkedin', 'twitter', 'articles']
+      }],
+      analysisVersion: { type: String, default: "1.0" }
+    },
+    
+    // Project Metrics for Radar Chart
+    projectMetrics: {
+      featuredStars: { type: Number, default: 0 },
+      readmeCoverage: { type: Number, default: 0, min: 0, max: 100 },
+      recencyMonthsMedian: { type: Number, default: null }
+    },
+    
+    // Writing Metrics for Radar Chart
+    writing: {
+      readmeQualityScore: { type: Number, default: 0, min: 0, max: 100 },
+      blogReadability: { type: Number, default: 0, min: 0, max: 100 },
+      articlesLast90d: { type: Number, default: 0 }
+    },
+    
+    // Social Metrics for Radar Chart
+    social: {
+      githubFollowers: { type: Number, default: 0 },
+      twitterFollowers: { type: Number, default: 0 },
+      linkedInPresent: { type: Boolean, default: false }
+    },
+    
+    // Additional Metrics for Radar Chart
+    verifiedSkillsCount: { type: Number, default: 0 },
+    documentsScore: { type: Number, default: 0, min: 0, max: 100 },
+    
+    // Radar Chart Data
+    radarAxes: {
+      codeActivity: { type: Number, default: 0, min: 0, max: 100 },
+      problemSolving: { type: Number, default: 0, min: 0, max: 100 },
+      projectImpact: { type: Number, default: 0, min: 0, max: 100 },
+      writingDocumentation: { type: Number, default: 0, min: 0, max: 100 },
+      socialCommunity: { type: Number, default: 0, min: 0, max: 100 },
+      verificationTrust: { type: Number, default: 0, min: 0, max: 100 }
+    },
+    
+    // Radar Chart Metadata
+    radarMeta: {
+      version: { type: String, default: "1.0" },
+      lastComputed: { type: Date, default: null },
+      inputsUsed: [{ type: String }],
+      normalizationNotes: { type: String, default: "" },
+      inferenceNotes: [{ type: String }]
     },
     
     lastUpdated: {
@@ -442,6 +552,182 @@ profileSchema.methods.calculateCompleteness = function () {
   
   this.completeness = Math.min(score, maxScore);
   return this.completeness;
+};
+
+// Method to calculate radar chart values
+profileSchema.methods.calculateRadarChart = function () {
+  const inputsUsed = [];
+  const inferenceNotes = [];
+  
+  // Helper function to clamp values between 0 and 100
+  const clamp = (value, min = 0, max = 100) => Math.round(Math.max(min, Math.min(max, value)));
+  
+  // Calculate supporting metrics first
+  this.verifiedSkillsCount = this.skills ? this.skills.filter(skill => skill.verified).length : 0;
+  this.social.linkedInPresent = Boolean(this.linkedinUrl && this.linkedinUrl.trim());
+  
+  // Set default values for missing metrics
+  if (!this.projectMetrics.featuredStars) {
+    this.projectMetrics.featuredStars = this.projects ? this.projects.filter(p => p.featured).length : 0;
+  }
+  if (!this.writing.articlesLast90d) {
+    this.writing.articlesLast90d = this.articleUrls ? this.articleUrls.length : 0;
+  }
+  if (!this.documentsScore) {
+    this.documentsScore = 0;
+    inferenceNotes.push("documentsScore set to 0 due to lack of evidence");
+  }
+  
+  // 1. Code Activity (0-100)
+  let codeActivity = 0;
+  if (this.platformStats?.github?.totalRepos > 0) {
+    codeActivity += Math.min(40, this.platformStats.github.totalRepos * 2);
+    inputsUsed.push("platformStats.github.totalRepos");
+  }
+  if (this.platformStats?.github?.commitCount90d > 0) {
+    codeActivity += Math.min(30, this.platformStats.github.commitCount90d / 2);
+    inputsUsed.push("platformStats.github.commitCount90d");
+  } else if (this.subScores?.codeActivityScore > 0) {
+    codeActivity += this.subScores.codeActivityScore * 20;
+    inputsUsed.push("subScores.codeActivityScore");
+    inferenceNotes.push("Used subScores.codeActivityScore as fallback for commit activity");
+  }
+  if (this.verification?.githubVerified) {
+    codeActivity += 20;
+    inputsUsed.push("verification.githubVerified");
+  }
+  if (this.topRepoUrls?.length > 0) {
+    codeActivity += Math.min(10, this.topRepoUrls.length * 2);
+    inputsUsed.push("topRepoUrls.length");
+  }
+  this.radarAxes.codeActivity = clamp(codeActivity);
+  
+  // 2. Problem Solving (0-100)
+  let problemSolving = 0;
+  if (this.platformStats?.codeforces?.rating > 0) {
+    problemSolving += Math.min(50, this.platformStats.codeforces.rating / 40);
+    inputsUsed.push("platformStats.codeforces.rating");
+  }
+  if (this.platformStats?.leetcode?.totalSolved > 0) {
+    problemSolving += Math.min(40, this.platformStats.leetcode.totalSolved / 25);
+    inputsUsed.push("platformStats.leetcode.totalSolved");
+  }
+  if (this.skills?.length > 0) {
+    const avgProficiency = this.skills.reduce((sum, skill) => sum + skill.proficiency, 0) / this.skills.length;
+    problemSolving += avgProficiency * 10;
+    inputsUsed.push("skills.proficiency");
+  }
+  if (problemSolving === 0 && this.projects?.length > 0) {
+    problemSolving = Math.min(30, this.projects.length * 10);
+    inputsUsed.push("projects.length");
+    inferenceNotes.push("Used projects.length as conservative proxy for problem solving");
+  }
+  this.radarAxes.problemSolving = clamp(problemSolving);
+  
+  // 3. Project Impact (0-100)
+  let projectImpact = 0;
+  if (this.platformStats?.github?.totalStars > 0) {
+    projectImpact += Math.min(50, this.platformStats.github.totalStars / 10);
+    inputsUsed.push("platformStats.github.totalStars");
+  }
+  if (this.projectMetrics?.featuredStars > 0) {
+    projectImpact += Math.min(30, this.projectMetrics.featuredStars * 10);
+    inputsUsed.push("projectMetrics.featuredStars");
+  }
+  if (this.projects?.length > 0) {
+    projectImpact += Math.min(20, this.projects.length * 5);
+    inputsUsed.push("projects.length");
+  }
+  this.radarAxes.projectImpact = clamp(projectImpact);
+  
+  // 4. Writing & Documentation (0-100)
+  let writingDocumentation = 0;
+  if (this.writing?.readmeQualityScore > 0) {
+    writingDocumentation += this.writing.readmeQualityScore * 0.4;
+    inputsUsed.push("writing.readmeQualityScore");
+  }
+  if (this.writing?.articlesLast90d > 0) {
+    writingDocumentation += Math.min(30, this.writing.articlesLast90d * 10);
+    inputsUsed.push("writing.articlesLast90d");
+  }
+  if (this.subScores?.writingScore > 0) {
+    writingDocumentation += this.subScores.writingScore * 20;
+    inputsUsed.push("subScores.writingScore");
+  }
+  if (this.projectMetrics?.readmeCoverage > 0) {
+    writingDocumentation += this.projectMetrics.readmeCoverage * 0.3;
+    inputsUsed.push("projectMetrics.readmeCoverage");
+  }
+  if (writingDocumentation === 0 && this.bio) {
+    writingDocumentation = 20;
+    inputsUsed.push("bio");
+    inferenceNotes.push("Used bio presence as minimal writing indicator");
+  }
+  this.radarAxes.writingDocumentation = clamp(writingDocumentation);
+  
+  // 5. Social & Community (0-100)
+  let socialCommunity = 0;
+  if (this.social?.githubFollowers > 0) {
+    socialCommunity += Math.min(30, this.social.githubFollowers / 10);
+    inputsUsed.push("social.githubFollowers");
+  }
+  if (this.social?.twitterFollowers > 0) {
+    socialCommunity += Math.min(25, this.social.twitterFollowers / 100);
+    inputsUsed.push("social.twitterFollowers");
+  }
+  if (this.social?.linkedInPresent) {
+    socialCommunity += 20;
+    inputsUsed.push("social.linkedInPresent");
+  }
+  if (this.subScores?.socialFitScore > 0) {
+    socialCommunity += this.subScores.socialFitScore * 20;
+    inputsUsed.push("subScores.socialFitScore");
+  }
+  if (this.portfolioWebsite) {
+    socialCommunity += 15;
+    inputsUsed.push("portfolioWebsite");
+  }
+  if (socialCommunity === 0) {
+    socialCommunity = 10;
+    inferenceNotes.push("Assigned minimal social score due to lack of social presence data");
+  }
+  this.radarAxes.socialCommunity = clamp(socialCommunity);
+  
+  // 6. Verification & Trust (0-100)
+  let verificationTrust = 0;
+  if (this.verification?.emailVerified) {
+    verificationTrust += 20;
+    inputsUsed.push("verification.emailVerified");
+  }
+  if (this.verification?.githubVerified) {
+    verificationTrust += 25;
+    inputsUsed.push("verification.githubVerified");
+  }
+  if (this.verification?.phoneVerified) {
+    verificationTrust += 15;
+    inputsUsed.push("verification.phoneVerified");
+  }
+  if (this.verification?.documentsVerified) {
+    verificationTrust += 20;
+    inputsUsed.push("verification.documentsVerified");
+  }
+  if (this.verifiedSkillsCount > 0) {
+    verificationTrust += Math.min(20, this.verifiedSkillsCount * 5);
+    inputsUsed.push("verifiedSkillsCount");
+  }
+  this.radarAxes.verificationTrust = clamp(verificationTrust);
+  
+  // Update metadata
+  this.radarMeta.version = "1.0";
+  this.radarMeta.lastComputed = new Date();
+  this.radarMeta.inputsUsed = [...new Set(inputsUsed)];
+  this.radarMeta.normalizationNotes = "Values clamped to 0-100 scale using weighted combinations of platform stats, verification status, and profile completeness.";
+  this.radarMeta.inferenceNotes = inferenceNotes;
+  
+  return {
+    radarAxes: this.radarAxes,
+    radarMeta: this.radarMeta
+  };
 };
 
 // Method to update last updated timestamp

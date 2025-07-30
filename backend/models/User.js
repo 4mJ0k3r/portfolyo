@@ -153,12 +153,12 @@ userSchema.methods.hasPremiumFeatures = function () {
 
 // Virtual for user role
 userSchema.virtual('role').get(function () {
-  return this.accountType.split('_')[0]; // 'developer' or 'recruiter'
+  return this.accountType ? this.accountType.split('_')[0] : 'developer'; // 'developer' or 'recruiter'
 });
 
 // Virtual for subscription tier
 userSchema.virtual('subscriptionTier').get(function () {
-  return this.accountType.split('_')[1]; // 'free', 'pro', 'basic'
+  return this.accountType ? this.accountType.split('_')[1] : 'free'; // 'free', 'pro', 'basic'
 });
 
 // Remove password from JSON output

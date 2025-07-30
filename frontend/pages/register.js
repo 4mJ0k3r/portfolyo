@@ -7,6 +7,7 @@ export default function Register() {
   const router = useRouter();
   const [formData, setFormData] = useState({
     name: '',
+    username: '',
     email: '',
     password: '',
     confirmPassword: '',
@@ -35,6 +36,14 @@ export default function Register() {
 
     if (!formData.name.trim()) {
       newErrors.name = 'Name is required';
+    }
+
+    if (!formData.username.trim()) {
+      newErrors.username = 'Username is required';
+    } else if (formData.username.trim().length < 3) {
+      newErrors.username = 'Username must be at least 3 characters';
+    } else if (!/^[a-zA-Z0-9_-]+$/.test(formData.username)) {
+      newErrors.username = 'Username can only contain letters, numbers, underscores, and hyphens';
     }
 
     if (!formData.email.trim()) {
@@ -68,13 +77,14 @@ export default function Register() {
     setErrors({});
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/register', {
+      const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           name: formData.name,
+          username: formData.username,
           email: formData.email,
           password: formData.password,
           accountType: formData.accountType
@@ -97,6 +107,8 @@ export default function Register() {
           data.errors.forEach(error => {
             if (error.includes('email')) {
               serverErrors.email = error;
+            } else if (error.includes('username')) {
+              serverErrors.username = error;
             } else if (error.includes('password')) {
               serverErrors.password = error;
             } else {
@@ -105,7 +117,14 @@ export default function Register() {
           });
           setErrors(serverErrors);
         } else {
-          setErrors({ general: data.message || 'Registration failed' });
+          // Handle specific error messages
+          if (data.message.includes('email')) {
+            setErrors({ email: data.message });
+          } else if (data.message.includes('username') || data.message.includes('Username')) {
+            setErrors({ username: data.message });
+          } else {
+            setErrors({ general: data.message || 'Registration failed' });
+          }
         }
       }
     } catch (error) {
@@ -148,6 +167,24 @@ export default function Register() {
                   placeholder="Enter your full name"
                 />
                 {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name}</p>}
+              </div>
+
+              {/* Username Field */}
+              <div>
+                <label htmlFor="username" className="block text-sm font-medium text-gray-700">
+                  Username
+                </label>
+                <input
+                  id="username"
+                  name="username"
+                  type="text"
+                  required
+                  value={formData.username}
+                  onChange={handleChange}
+                  className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                  placeholder="Choose a unique username"
+                />
+                {errors.username && <p className="mt-1 text-sm text-red-600">{errors.username}</p>}
               </div>
 
               {/* Email Field */}
@@ -260,4 +297,4 @@ export default function Register() {
       
     </div>
   );
-} 
+}

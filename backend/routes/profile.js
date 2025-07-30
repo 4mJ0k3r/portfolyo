@@ -5,7 +5,9 @@ const {
   getCurrentUserProfile,
   createOrUpdateProfile,
   getProfileByUsername,
-  fetchPlatformsForProfile
+  fetchPlatformsForProfile,
+  runSkillExtractor,
+  clearSocialFields
 } = require("../controllers/profileController");
 
 // @route   GET /api/profile/me
@@ -32,5 +34,15 @@ router.get("/:username", getProfileByUsername);
 // @desc    Fetch and sync platform statistics for profile
 // @access  Private
 router.post("/:username/fetchPlatforms", protect, fetchPlatformsForProfile);
+
+// @route   POST /api/profile/:username/runSkillExtractor
+// @desc    Run AI-powered skill extraction and ranking
+// @access  Public (temporarily for testing)
+router.post("/:username/runSkillExtractor", runSkillExtractor);
+
+// @route   POST /api/profile/clear-social
+// @desc    Clear Twitter and LinkedIn fields (for testing)
+// @access  Private
+router.post("/clear-social", protect, clearSocialFields);
 
 module.exports = router;

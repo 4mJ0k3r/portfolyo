@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import toast from 'react-hot-toast';
 
 export default function ProfileEdit() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [generatingAI, setGeneratingAI] = useState(false);
+  const [isExtractorRunning, setIsExtractorRunning] = useState(false);
   const [message, setMessage] = useState('');
   const [errors, setErrors] = useState({});
 
@@ -23,6 +26,10 @@ export default function ProfileEdit() {
     leetcodeUsername: '',
     stackoverflowId: '',
     
+    // New Profile Links for AI Analysis
+    topRepoUrls: ['', '', ''], // array of at least three
+    articleUrls: [''], // dynamic list
+    
     // Job Preferences
     jobSeekingStatus: 'actively_looking',
     preferredRoles: '',
@@ -32,6 +39,21 @@ export default function ProfileEdit() {
     // Bio & Headline
     headline: '',
     bio: '',
+    
+    // AI results (initially defaults)
+    primaryExpertise: '',
+    hireableScore: 0,
+    subScores: {
+      codeActivityScore: 0,
+      writingScore: 0,
+      socialFitScore: 0
+    },
+    scoreJustifications: {
+      codeActivity: [],
+      writing: [],
+      socialFit: []
+    },
+    narrativeSummary: '',
     
     // Dynamic Arrays
     skills: [],
@@ -55,7 +77,7 @@ export default function ProfileEdit() {
   // Fetch existing profile
   const fetchProfile = async (token) => {
     try {
-      const response = await fetch('http://localhost:5000/api/profile/me', {
+      const response = await fetch('/api/profile/me', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -76,12 +98,37 @@ export default function ProfileEdit() {
           codeforcesUsername: profile.codeforcesUsername || '',
           leetcodeUsername: profile.leetcodeUsername || '',
           stackoverflowId: profile.stackoverflowId || '',
+          
+          // New Profile Links for AI Analysis
+          topRepoUrls: profile.topRepoUrls && profile.topRepoUrls.length >= 3 
+            ? profile.topRepoUrls 
+            : ['', '', ''],
+          articleUrls: profile.articleUrls && profile.articleUrls.length > 0 
+            ? profile.articleUrls 
+            : [''],
+          
           jobSeekingStatus: profile.jobSeekingStatus || 'actively_looking',
           preferredRoles: Array.isArray(profile.preferredRoles) ? profile.preferredRoles.join(', ') : '',
           expectedSalary: profile.expectedSalary || '',
           workPreference: profile.workPreference || 'remote',
           headline: profile.headline || '',
           bio: profile.bio || '',
+          
+          // AI results
+          primaryExpertise: profile.primaryExpertise || '',
+          hireableScore: profile.hireableScore || 0,
+          subScores: profile.subScores || {
+            codeActivityScore: 0,
+            writingScore: 0,
+            socialFitScore: 0
+          },
+          scoreJustifications: profile.scoreJustifications || {
+            codeActivity: [],
+            writing: [],
+            socialFit: []
+          },
+          narrativeSummary: profile.narrativeSummary || '',
+          
           skills: profile.skills || [],
           experience: profile.experience || [],
           projects: (profile.projects || []).map(project => ({
@@ -202,6 +249,129 @@ export default function ProfileEdit() {
     }));
   };
 
+  // Repository URLs management
+  const handleRepoUrlChange = (index) => (e) => {
+    const newUrls = [...profileData.topRepoUrls];
+    newUrls[index] = e.target.value;
+    setProfileData(prev => ({
+      ...prev,
+      topRepoUrls: newUrls
+    }));
+  };
+
+  const addRepoField = () => {
+    setProfileData(prev => ({
+      ...prev,
+      topRepoUrls: [...prev.topRepoUrls, '']
+    }));
+  };
+
+  const removeRepoField = (index) => {
+    if (profileData.topRepoUrls.length > 3) {
+      setProfileData(prev => ({
+        ...prev,
+        topRepoUrls: prev.topRepoUrls.filter((_, i) => i !== index)
+      }));
+    }
+  };
+
+  // Article URLs management
+  const handleArticleUrlChange = (index) => (e) => {
+    const newUrls = [...profileData.articleUrls];
+    newUrls[index] = e.target.value;
+    setProfileData(prev => ({
+      ...prev,
+      articleUrls: newUrls
+    }));
+  };
+
+  const addArticleField = () => {
+    setProfileData(prev => ({
+      ...prev,
+      articleUrls: [...prev.articleUrls, '']
+    }));
+  };
+
+  const removeArticleField = (index) => {
+    if (profileData.articleUrls.length > 1) {
+      setProfileData(prev => ({
+        ...prev,
+        articleUrls: prev.articleUrls.filter((_, i) => i !== index)
+      }));
+    }
+  };
+
+  // Check if AI extraction can be run
+  const canRunExtractor = () => {
+    // GitHub username is required
+    if (!profileData.githubUsername || !profileData.githubUsername.trim()) {
+      return false;
+    }
+    
+    // At least three non-empty repo URLs
+    const validRepos = profileData.topRepoUrls.filter(url => url.trim() !== '');
+    if (validRepos.length < 3) {
+      return false;
+    }
+    
+    // At least one additional link (optional but recommended)
+    const hasAdditionalLink = profileData.codeforcesUsername || 
+                             profileData.leetcodeUsername || 
+                             profileData.articleUrls.some(url => url.trim() !== '') ||
+                             profileData.linkedinUrl ||
+                             profileData.twitterHandle;
+    
+    return hasAdditionalLink;
+  };
+
+  // Enhanced AI Profile Generation
+  const handleRunSkillExtractor = async () => {
+    const token = localStorage.getItem('token');
+    const user = JSON.parse(localStorage.getItem('user'));
+    
+    if (!user?.username) {
+      setMessage('Username not found');
+      return;
+    }
+
+    setGeneratingAI(true);
+    setMessage('');
+
+    try {
+      const response = await fetch(`/api/profile/${user.username}/runSkillExtractor`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setMessage('✅ AI analysis completed successfully! Your profile has been enhanced with AI insights.');
+        // Update local state with enriched fields
+        setProfileData(prev => ({
+          ...prev,
+          primaryExpertise: data.aiAnalysis?.primaryExpertise || prev.primaryExpertise,
+          hireableScore: data.aiAnalysis?.hireableScore || prev.hireableScore,
+          subScores: data.aiAnalysis?.subScores || prev.subScores,
+          scoreJustifications: data.aiAnalysis?.scoreJustifications || prev.scoreJustifications,
+          narrativeSummary: data.aiAnalysis?.narrativeSummary || prev.narrativeSummary
+        }));
+        // Also reload profile data to ensure consistency
+        fetchProfile(token);
+      } else {
+        setMessage(`❌ AI generation failed: ${data.message}`);
+      }
+    } catch (error) {
+      console.error('AI generation error:', error);
+      setMessage('❌ Error generating AI profile analysis');
+    } finally {
+      setGeneratingAI(false);
+    }
+  };
+
   // Platform sync
   const syncPlatforms = async () => {
     const token = localStorage.getItem('token');
@@ -216,7 +386,7 @@ export default function ProfileEdit() {
     setMessage('');
 
     try {
-      const response = await fetch(`http://localhost:5000/api/profile/${user.username}/fetchPlatforms`, {
+      const response = await fetch(`/api/profile/${user.username}/fetchPlatforms`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -239,6 +409,46 @@ export default function ProfileEdit() {
       setMessage('❌ Error syncing platform stats');
     } finally {
       setSyncing(false);
+    }
+  };
+
+  // AI Profile Generation
+  const generateAIProfile = async () => {
+    const token = localStorage.getItem('token');
+    const user = JSON.parse(localStorage.getItem('user'));
+    
+    if (!user?.username) {
+      setMessage('Username not found');
+      return;
+    }
+
+    setGeneratingAI(true);
+    setMessage('');
+
+    try {
+      const response = await fetch(`/api/profile/${user.username}/runSkillExtractor`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({})
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setMessage('✅ AI analysis completed successfully! Your profile has been enhanced with AI insights.');
+        // Reload profile data to show the new AI-generated content
+        fetchProfile(token);
+      } else {
+        setMessage(`❌ AI generation failed: ${data.message}`);
+      }
+    } catch (error) {
+      console.error('AI generation error:', error);
+      setMessage('❌ Error generating AI profile analysis');
+    } finally {
+      setGeneratingAI(false);
     }
   };
 
@@ -298,11 +508,14 @@ export default function ProfileEdit() {
         techStack: Array.isArray(project.techStack) 
           ? project.techStack 
           : project.techStack.split(',').map(tech => tech.trim()).filter(tech => tech)
-      }))
+      })),
+      // Include new profile link fields
+      topRepoUrls: profileData.topRepoUrls.filter(url => url.trim() !== ''),
+      articleUrls: profileData.articleUrls.filter(url => url.trim() !== '')
     };
 
     try {
-      const response = await fetch('http://localhost:5000/api/profile', {
+      const response = await fetch('/api/profile', {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -459,6 +672,84 @@ export default function ProfileEdit() {
                 </div>
               </div>
             </section>
+
+            {/* GitHub Links Section */}
+            <section className="mb-8">
+              <h2 className="text-2xl font-semibold mb-4">Top Repositories (minimum 3)</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Repository URLs</label>
+                  {profileData.topRepoUrls.map((url, idx) => (
+                    <div key={idx} className="flex items-center space-x-2 mb-2">
+                      <input
+                        type="url"
+                        value={profileData.topRepoUrls[idx]}
+                        onChange={handleRepoUrlChange(idx)}
+                        placeholder="https://github.com/user/repo"
+                        className="flex-grow border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      {profileData.topRepoUrls.length > 3 && (
+                        <button 
+                          type="button"
+                          onClick={() => removeRepoField(idx)} 
+                          className="text-red-500 hover:text-red-700 px-2 py-1"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button 
+                    type="button"
+                    onClick={addRepoField} 
+                    className="text-blue-500 hover:text-blue-700 mb-4"
+                  >
+                    + Add Repository
+                  </button>
+                </div>
+              </div>
+            </section>
+
+
+
+            {/* Article Links */}
+            <section className="mb-8">
+              <h2 className="text-2xl font-semibold mb-4">Articles & Blog Posts</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Article URLs</label>
+                  {profileData.articleUrls.map((url, idx) => (
+                    <div key={idx} className="flex items-center space-x-2 mb-2">
+                      <input
+                        type="url"
+                        value={profileData.articleUrls[idx]}
+                        onChange={handleArticleUrlChange(idx)}
+                        placeholder="https://medium.com/... or https://dev.to/..."
+                        className="flex-grow border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      {profileData.articleUrls.length > 1 && (
+                        <button 
+                          type="button"
+                          onClick={() => removeArticleField(idx)} 
+                          className="text-red-500 hover:text-red-700 px-2 py-1"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button 
+                    type="button"
+                    onClick={addArticleField} 
+                    className="text-blue-500 hover:text-blue-700 mb-4"
+                  >
+                    + Add Article URL
+                  </button>
+                </div>
+              </div>
+            </section>
+
+
 
             {/* Job Preferences */}
             <section className="mb-8">
@@ -746,6 +1037,48 @@ export default function ProfileEdit() {
               </button>
             </section>
 
+            {/* AI Profile Generation */}
+            <section className="mb-8">
+              <h2 className="text-2xl font-semibold mb-4">🤖 AI-Powered Profile Enhancement</h2>
+              <div className="bg-gradient-to-r from-purple-50 to-blue-50 p-6 rounded-lg border border-purple-200">
+                <p className="text-gray-700 mb-4">
+                  Let our AI analyze your GitHub repositories, competitive programming profiles, articles, and social presence 
+                  to generate comprehensive insights about your skills and expertise.
+                </p>
+                <div className="mb-4">
+                  <h3 className="font-semibold text-gray-800 mb-2">AI will analyze:</h3>
+                  <ul className="text-sm text-gray-600 space-y-1">
+                    <li>• GitHub repositories, languages, and contribution patterns</li>
+                    <li>• Competitive programming ratings and achievements</li>
+                    <li>• Technical articles and writing quality</li>
+                    <li>• Social media presence and professional network</li>
+                    <li>• Overall hireable score with detailed justifications</li>
+                  </ul>
+                </div>
+                {!canRunExtractor() && (
+                  <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <p className="text-sm text-yellow-800">
+                      <strong>Requirements:</strong> Please provide your GitHub username, at least 3 repository URLs, 
+                      and at least one additional link (Codeforces, LeetCode, articles, LinkedIn, or Twitter) to enable AI analysis.
+                    </p>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={handleRunSkillExtractor}
+                  disabled={isExtractorRunning || !canRunExtractor()}
+                  className="px-6 py-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-md hover:from-purple-600 hover:to-blue-600 disabled:opacity-50 font-semibold"
+                >
+                  {isExtractorRunning ? '🔄 Generating AI Insights...' : '✨ Generate Full Profile with AI'}
+                </button>
+                {isExtractorRunning && (
+                  <p className="text-sm text-gray-600 mt-2">
+                    This may take 30-60 seconds as we analyze your data across multiple platforms...
+                  </p>
+                )}
+              </div>
+            </section>
+
             {/* Submit Button */}
             <div className="flex justify-end space-x-4">
               <button
@@ -768,4 +1101,4 @@ export default function ProfileEdit() {
       </div>
     </div>
   );
-} 
+}

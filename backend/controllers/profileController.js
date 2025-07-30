@@ -16,6 +16,16 @@ exports.getCurrentUserProfile = async (req, res) => {
       });
     }
 
+    // Calculate and update completeness before returning
+    profile.calculateCompleteness();
+    
+    // Calculate radar chart values if missing or outdated
+    if (!profile.radarAxes || !profile.radarMeta || !profile.radarMeta.lastComputed) {
+      profile.calculateRadarChart();
+    }
+    
+    await profile.save();
+
     res.status(200).json({
       success: true,
       profile
@@ -36,6 +46,11 @@ exports.getCurrentUserProfile = async (req, res) => {
 // @access  Private
 exports.createOrUpdateProfile = async (req, res) => {
   try {
+    console.log('🔄 Profile operation started');
+    console.log('👤 User ID:', req.user.userId);
+    console.log('📝 Request body keys:', Object.keys(req.body));
+    console.log('📊 Request body size:', JSON.stringify(req.body).length, 'characters');
+    
     // Build profile fields object
     const profileFields = {
       user: req.user.userId,
@@ -49,17 +64,28 @@ exports.createOrUpdateProfile = async (req, res) => {
       }
     });
 
+    console.log('🔧 Profile fields prepared:', Object.keys(profileFields));
+
     // Check if profile already exists
     let profile = await Profile.findOne({ user: req.user.userId });
+    console.log('📋 Existing profile:', profile ? `Found (ID: ${profile._id})` : 'Not found');
 
     if (profile) {
       // Update existing profile
+      console.log('🔄 Updating existing profile...');
       profile = await Profile.findOneAndUpdate(
         { user: req.user.userId },
         { $set: profileFields },
         { new: true, runValidators: true }
       ).populate("user", ["name", "email", "accountType"]);
 
+      // Calculate radar chart values if missing or outdated
+      if (!profile.radarAxes || !profile.radarMeta || !profile.radarMeta.lastComputed) {
+        profile.calculateRadarChart();
+        await profile.save();
+      }
+
+      console.log('✅ Profile updated successfully:', profile._id);
       return res.status(200).json({
         success: true,
         message: "Profile updated successfully",
@@ -68,12 +94,18 @@ exports.createOrUpdateProfile = async (req, res) => {
     }
 
     // Create new profile
+    console.log('🆕 Creating new profile...');
     profile = new Profile(profileFields);
+    await profile.save();
+    
+    // Calculate radar chart values for new profile
+    profile.calculateRadarChart();
     await profile.save();
     
     // Populate user data
     await profile.populate("user", ["name", "email", "accountType"]);
 
+    console.log('✅ Profile created successfully:', profile._id);
     res.status(201).json({
       success: true,
       message: "Profile created successfully",
@@ -81,11 +113,12 @@ exports.createOrUpdateProfile = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Create/Update profile error:", error);
+    console.error("❌ Create/Update profile error:", error);
 
     // Handle validation errors
     if (error.name === 'ValidationError') {
       const errors = Object.values(error.errors).map(err => err.message);
+      console.error("❌ Validation errors:", errors);
       return res.status(400).json({
         success: false,
         message: "Validation failed",
@@ -145,28 +178,71 @@ exports.getProfileByUsername = async (req, res) => {
       });
     }
 
+    // Debug: Log AI fields from database
+    console.log(`🧠 AI fields in database:`, {
+      primaryExpertise: profile.primaryExpertise,
+      hireableScore: profile.hireableScore,
+      subScores: profile.subScores,
+      narrativeSummary: profile.narrativeSummary,
+      aiAnalysis: profile.aiAnalysis
+    });
+
+    // Calculate and update completeness before returning
+    profile.calculateCompleteness();
+    
+    // Calculate radar chart values if missing or outdated
+    if (!profile.radarAxes || !profile.radarMeta || !profile.radarMeta.lastComputed) {
+      profile.calculateRadarChart();
+    }
+    
+    await profile.save();
+
     console.log(`✅ Returning public profile for: ${user.username}`);
 
     // Return public profile data (excluding sensitive information)
     const publicProfile = {
       _id: profile._id,
       user: profile.user,
-      basicInfo: profile.basicInfo,
+      bio: profile.bio,
+      headline: profile.headline,
+      location: profile.location,
+      phone: profile.phone,
+      portfolioWebsite: profile.portfolioWebsite,
+      expectedSalary: profile.expectedSalary,
+      jobSeekingStatus: profile.jobSeekingStatus,
       skills: profile.skills,
       experience: profile.experience,
+      education: profile.education,
       projects: profile.projects,
       githubUsername: profile.githubUsername,
       codeforcesUsername: profile.codeforcesUsername,
       leetcodeUsername: profile.leetcodeUsername,
       socialHandles: profile.socialHandles,
-      verificationStatus: profile.verificationStatus,
+      verification: profile.verification,
       rank: profile.rank,
       achievements: profile.achievements,
       profileViews: profile.profileViews,
       platformStats: profile.platformStats,
       isPublic: profile.isPublic,
+      completeness: profile.completeness,
       createdAt: profile.createdAt,
-      updatedAt: profile.updatedAt
+      updatedAt: profile.updatedAt,
+      // AI-generated fields (Phase 4)
+      primaryExpertise: profile.primaryExpertise,
+      hireableScore: profile.hireableScore,
+      subScores: profile.subScores,
+      scoreJustifications: profile.scoreJustifications,
+      narrativeSummary: profile.narrativeSummary,
+      aiAnalysis: profile.aiAnalysis,
+      // Radar chart fields
+      radarAxes: profile.radarAxes,
+      radarMeta: profile.radarMeta,
+      // Supporting metrics for radar chart
+      projectMetrics: profile.projectMetrics,
+      writing: profile.writing,
+      social: profile.social,
+      verifiedSkillsCount: profile.verifiedSkillsCount,
+      documentsScore: profile.documentsScore
     };
 
     // Increment profile views (optional - for analytics)
@@ -443,6 +519,193 @@ exports.fetchPlatformsForProfile = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error during platform sync",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// @desc    Run AI-powered skill extraction and ranking
+// @route   POST /api/profile/:username/runSkillExtractor
+// @access  Private
+exports.runSkillExtractor = async (req, res) => {
+  try {
+    const { username } = req.params;
+
+    console.log(`🤖 Starting AI skill extraction for username: ${username}`);
+
+    // First, find the user by username
+    const User = require("../models/User");
+    const user = await User.findByUsername(username.toLowerCase().trim());
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    // Then find their profile
+    const profile = await Profile.findOne({ user: user._id }).populate("user", ["name", "username", "email"]);
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: "Profile not found"
+      });
+    }
+
+    // Check if the logged-in user owns this profile (skip if no authentication)
+    if (req.user && profile.user._id.toString() !== req.user.userId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. You can only run AI analysis on your own profile"
+      });
+    }
+
+    // Check if OpenAI API key is configured
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        message: "AI analysis is not configured. Please contact administrator."
+      });
+    }
+
+    // Import and run the SkillExtractor
+    const { runSkillExtractor } = require("../services/skillExtractor");
+    
+    console.log(`🚀 Running AI analysis for profile: ${profile.user.name}`);
+    
+    // Run the AI analysis
+    const aiAnalysis = await runSkillExtractor(profile);
+
+    // Debug: Log the AI analysis data before saving
+    console.log(`🔍 AI Analysis data to save:`, {
+      primaryExpertise: aiAnalysis.primaryExpertise,
+      hireableScore: aiAnalysis.hireableScore,
+      subScores: aiAnalysis.subScores,
+      scoreJustifications: aiAnalysis.scoreJustifications,
+      narrativeSummary: aiAnalysis.narrativeSummary,
+      aiAnalysis: aiAnalysis.aiAnalysis
+    });
+
+    // Update the profile with AI analysis results
+    const updatedProfile = await Profile.findByIdAndUpdate(
+      profile._id,
+      { 
+        $set: {
+          primaryExpertise: aiAnalysis.primaryExpertise,
+          hireableScore: aiAnalysis.hireableScore,
+          subScores: aiAnalysis.subScores,
+          scoreJustifications: aiAnalysis.scoreJustifications,
+          narrativeSummary: aiAnalysis.narrativeSummary,
+          aiAnalysis: aiAnalysis.aiAnalysis,
+          radarAxes: aiAnalysis.radarAxes,
+          radarMeta: aiAnalysis.radarMeta,
+          lastUpdated: new Date()
+        }
+      },
+      { new: true, runValidators: true }
+    ).populate("user", ["name", "username", "email", "accountType"]);
+
+    // Debug: Log the updated profile to verify AI fields were saved
+    console.log(`🔍 Updated profile AI fields:`, {
+      primaryExpertise: updatedProfile.primaryExpertise,
+      hireableScore: updatedProfile.hireableScore,
+      subScores: updatedProfile.subScores,
+      narrativeSummary: updatedProfile.narrativeSummary
+    });
+
+    // Log the results
+    console.log(`✅ AI analysis completed for ${profile.user.name}:`);
+    console.log(`   Primary Expertise: ${aiAnalysis.primaryExpertise}`);
+    console.log(`   Hireable Score: ${aiAnalysis.hireableScore}/100`);
+    console.log(`   Code Activity: ${aiAnalysis.subScores.codeActivityScore}/5`);
+    console.log(`   Writing Quality: ${aiAnalysis.subScores.writingScore}/5`);
+    console.log(`   Social Fit: ${aiAnalysis.subScores.socialFitScore}/5`);
+
+    res.status(200).json({
+      success: true,
+      message: "AI skill extraction completed successfully",
+      profile: updatedProfile,
+      aiAnalysis: {
+        primaryExpertise: aiAnalysis.primaryExpertise,
+        hireableScore: aiAnalysis.hireableScore,
+        subScores: aiAnalysis.subScores,
+        scoreJustifications: aiAnalysis.scoreJustifications,
+        narrativeSummary: aiAnalysis.narrativeSummary,
+        dataSourcesUsed: aiAnalysis.aiAnalysis.dataSourcesUsed,
+        lastAnalyzed: aiAnalysis.aiAnalysis.lastAnalyzed
+      }
+    });
+
+  } catch (error) {
+    console.error("AI skill extraction error:", error);
+    
+    // Handle specific error types
+    let errorMessage = "Server error during AI analysis";
+    let statusCode = 500;
+    
+    if (error.message.includes('OpenAI')) {
+      errorMessage = "AI service temporarily unavailable. Please try again later.";
+      statusCode = 503;
+    } else if (error.message.includes('rate limit')) {
+      errorMessage = "AI analysis rate limit exceeded. Please try again in a few minutes.";
+      statusCode = 429;
+    } else if (error.message.includes('Skill extraction failed')) {
+      errorMessage = error.message;
+      statusCode = 400;
+    }
+
+    res.status(statusCode).json({
+      success: false,
+      message: errorMessage,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// @desc    Clear Twitter and LinkedIn fields (for testing)
+// @route   POST /api/profile/clear-social
+// @access  Private
+exports.clearSocialFields = async (req, res) => {
+  try {
+    console.log(`🧹 Clearing social fields for user: ${req.user.userId}`);
+
+    // Find and update the profile to remove Twitter and LinkedIn fields
+    const updatedProfile = await Profile.findOneAndUpdate(
+      { user: req.user.userId },
+      { 
+        $unset: { 
+          twitterHandle: "",
+          linkedinUrl: ""
+        },
+        $set: {
+          lastUpdated: new Date()
+        }
+      },
+      { new: true, runValidators: true }
+    ).populate("user", ["name", "username", "email", "accountType"]);
+
+    if (!updatedProfile) {
+      return res.status(404).json({
+        success: false,
+        message: "Profile not found"
+      });
+    }
+
+    console.log(`✅ Social fields cleared for ${updatedProfile.user.name}`);
+
+    res.status(200).json({
+      success: true,
+      message: "Twitter and LinkedIn fields cleared successfully",
+      profile: updatedProfile
+    });
+
+  } catch (error) {
+    console.error("Clear social fields error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while clearing social fields",
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
